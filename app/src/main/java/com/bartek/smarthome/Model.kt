@@ -97,6 +97,8 @@ class Store(context: Context) {
     fun category(k: String) = get("cat:$k")
     fun setCategory(k: String, c: String) = set("cat:$k", c)
     /** Filter chips hidden from the top bar (Filter names). */
+    fun isHidden(k: String) = p.getBoolean("hidden:$k", false)
+    fun setHidden(k: String, v: Boolean) { p.edit().putBoolean("hidden:$k", v).commit() }
     fun hiddenFilters(): Set<String> = get("hiddenFilters").split(',').filter { it.isNotBlank() }.toSet()
     fun setHiddenFilters(s: Set<String>) = set("hiddenFilters", s.joinToString(","))
 

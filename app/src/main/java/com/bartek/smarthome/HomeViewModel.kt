@@ -120,6 +120,14 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         bump()
     }
 
+    /** Hidden devices disappear from every list (except Ulubione) and from the light switches. */
+    fun isHidden(d: Device) = store.isHidden(d.key)
+    fun hiddenDevices(): List<Device> = devices.filter { isHidden(it) }
+    fun setHidden(d: Device, hidden: Boolean) {
+        store.setHidden(d.key, hidden)
+        bump()
+    }
+
     fun toggleFav(d: Device) {
         store.setFavorite(d.key, !store.isFavorite(d.key))
         bump()

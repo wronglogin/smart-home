@@ -41,6 +41,7 @@ import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Tv
 import androidx.compose.material.icons.outlined.ViewWeek
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -208,6 +209,7 @@ fun HomeScreen(vm: HomeViewModel, openSettings: () -> Unit) {
     var chosen by rememberSaveable { mutableStateOf(Filter.ALL) }
     var selected by remember { mutableStateOf<String?>(null) }
     var editChips by remember { mutableStateOf(false) }
+    var showHidden by remember { mutableStateOf(false) }
     val devices = vm.devices
     val hidden = vm.hiddenFilters()
     // "Ulubione" only shows up once something is a favourite; hidden chips are skipped.
@@ -289,7 +291,8 @@ fun HomeScreen(vm: HomeViewModel, openSettings: () -> Unit) {
         if (!vm.anyConfigured()) {
             EmptyState(openSettings)
         } else {
-            val shown = devices.filter { vm.matches(filter, it) }
+            val shown = devices.filter { vm.matches(filter, it) && (filter == Filter.FAV || !vm.isHidden(it)) }
+            val hiddenCount = vm.hiddenDevices().size
             val groups = shown.groupBy { vm.room(it) }
                 .toSortedMap(compareBy { if (it == DEFAULT_ROOM) "￿" else it.lowercase() })
             LazyVerticalGrid(
@@ -299,7 +302,7 @@ fun HomeScreen(vm: HomeViewModel, openSettings: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                val allLights = devices.filter { vm.isLight(it) && it.canPower && it.online }
+                val allLights = devices.filter { vm.isLight(it) && it.canPower && it.online && !vm.isHidden(it) }
                 if (allLights.isNotEmpty()) {
                     item(key = "house-lights", span = { GridItemSpan(maxLineSpan) }) { HouseLights(vm, allLights) }
                 }
@@ -315,14 +318,24 @@ fun HomeScreen(vm: HomeViewModel, openSettings: () -> Unit) {
                 groups.forEach { (room, list) ->
                     item(key = "room:$room", span = { GridItemSpan(maxLineSpan) }) {
                         // Light switch for the whole room uses every light in it, not only the ones the filter shows.
-                        val lights = devices.filter { vm.room(it) == room && vm.isLight(it) && it.canPower && it.online }
+                        val lights = devices.filter { vm.room(it) == room && vm.isLight(it) && it.canPower && it.online && !vm.isHidden(it) }
                         RoomHeader(vm, room, lights)
                     }
                     items(list, key = { it.key }) { d -> DeviceTile(vm, d) { selected = d.key } }
                 }
+                if (hiddenCount > 0) {
+                    item(key = "hidden-devices", span = { GridItemSpan(maxLineSpan) }) {
+                        TextButton(onClick = { showHidden = true }, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Outlined.VisibilityOff, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Ukryte urządzenia ($hiddenCount)")
+                        }
+                    }
+                }
             }
         }
     }
+    if (showHidden) HiddenDialog(vm, onOpen = { showHidden = false; selected = it }) { showHidden = false }
 
     val sel = devices.firstOrNull { it.key == selected }
     if (sel != null) DeviceSheet(vm, sel) { selected = null }
@@ -511,6 +524,17 @@ fun DeviceSheet(vm: HomeViewModel, d: Device, onDismiss: () -> Unit) {
             if (d.canPosition) PositionControl(vm, d)
 
             HorizontalDivider()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Ukryj urządzenie", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "Nie będzie widoczne na liście ani włączane z pokojem i domem",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = vm.isHidden(d), onCheckedChange = { vm.setHidden(d, it) })
+            }
             CategoryPicker(vm, d)
             NameAndRoom(vm, d)
         }
@@ -720,6 +744,41 @@ private fun NameAndRoom(vm: HomeViewModel, d: Device) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+}
+
+/** Lists hidden devices so they can be shown again or opened. */
+@Composable
+private fun HiddenDialog(vm: HomeViewModel, onOpen: (String) -> Unit, onDismiss: () -> Unit) {
+    vm.version
+    val list = vm.hiddenDevices()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Ukryte urządzenia") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                if (list.isEmpty()) Text("Brak ukrytych urządzeń")
+                list.forEach { d ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable { onOpen(d.key) }.padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(kindIcon(d.kind, d.on), null, Modifier.size(22.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(vm.name(d), style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                "${d.provider.label} · ${vm.room(d)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        TextButton(onClick = { vm.setHidden(d, false) }) { Text("Pokaż") }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Gotowe") } },
+    )
 }
 
 /** Turns top-bar categories on and off. "Wszystkie urządzenia" always stays. */
