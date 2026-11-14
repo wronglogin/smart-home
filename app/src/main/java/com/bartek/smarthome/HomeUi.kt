@@ -38,6 +38,7 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.SettingsRemote
 import androidx.compose.material.icons.outlined.Thermostat
 import androidx.compose.material.icons.outlined.TouchApp
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Tv
 import androidx.compose.material.icons.outlined.ViewWeek
 import androidx.compose.material3.*
@@ -142,9 +143,16 @@ enum class Filter(val label: String) {
     FAV("Ulubione"), ALL("Wszystkie urządzenia"), LIGHTS("Oświetlenie"), PLUGS("Gniazdka"),
     COVERS("Rolety"), SENSORS("Czujniki"), MEDIA("Telewizory");
 
-    fun match(d: Device, fav: Boolean): Boolean = when (this) {
-        FAV -> fav
-        ALL -> true
+    fun match(d: Device, fav: Boolean, manual: Filter? = null): Boolean = when {
+        this == FAV -> fav
+        this == ALL -> true
+        manual != null -> this == manual
+        else -> auto(d)
+    }
+
+    /** Category by device type, used when the user hasn't picked one. */
+    fun auto(d: Device): Boolean = when (this) {
+        FAV, ALL -> true
         LIGHTS -> d.kind == Kind.LIGHT
         PLUGS -> d.kind == Kind.PLUG || d.kind == Kind.BOT
         COVERS -> d.kind == Kind.CURTAIN || d.kind == Kind.BLIND
@@ -197,9 +205,16 @@ fun statusText(d: Device): String {
 @Composable
 fun HomeScreen(vm: HomeViewModel, openSettings: () -> Unit) {
     vm.version // re-read names, rooms and favourites when they change
-    var filter by rememberSaveable { mutableStateOf(Filter.ALL) }
+    var chosen by rememberSaveable { mutableStateOf(Filter.ALL) }
     var selected by remember { mutableStateOf<String?>(null) }
+    var editChips by remember { mutableStateOf(false) }
     val devices = vm.devices
+    val hidden = vm.hiddenFilters()
+    // "Ulubione" only shows up once something is a favourite; hidden chips are skipped.
+    val visible = Filter.entries.filter { f ->
+        f == Filter.ALL || (f !in hidden && (f != Filter.FAV || vm.anyFav()))
+    }
+    val filter = if (chosen in visible) chosen else Filter.ALL
 
     Column(Modifier.fillMaxSize()) {
         Row(
@@ -231,10 +246,10 @@ fun HomeScreen(vm: HomeViewModel, openSettings: () -> Unit) {
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            items(Filter.entries) { f ->
+            items(visible) { f ->
                 FilterChip(
                     selected = filter == f,
-                    onClick = { filter = f },
+                    onClick = { chosen = f },
                     label = { Text(f.label, modifier = Modifier.padding(vertical = 10.dp)) },
                     leadingIcon = if (f == Filter.FAV) {
                         { Icon(Icons.Outlined.FavoriteBorder, null, Modifier.size(18.dp)) }
@@ -249,7 +264,16 @@ fun HomeScreen(vm: HomeViewModel, openSettings: () -> Unit) {
                     ),
                 )
             }
+            item {
+                FilterChip(
+                    selected = false,
+                    onClick = { editChips = true },
+                    label = { Icon(Icons.Outlined.Tune, "Edytuj kategorie", Modifier.padding(vertical = 10.dp).size(20.dp)) },
+                    shape = RoundedCornerShape(24.dp),
+                )
+            }
         }
+        if (editChips) ChipsDialog(vm) { editChips = false }
 
         vm.errors.forEach { (p, msg) ->
             Text(
@@ -265,7 +289,7 @@ fun HomeScreen(vm: HomeViewModel, openSettings: () -> Unit) {
         if (!vm.anyConfigured()) {
             EmptyState(openSettings)
         } else {
-            val shown = devices.filter { filter.match(it, vm.isFav(it)) }
+            val shown = devices.filter { vm.matches(filter, it) }
             val groups = shown.groupBy { vm.room(it) }
                 .toSortedMap(compareBy { if (it == DEFAULT_ROOM) "￿" else it.lowercase() })
             LazyVerticalGrid(
@@ -275,7 +299,7 @@ fun HomeScreen(vm: HomeViewModel, openSettings: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                val allLights = devices.filter { it.kind == Kind.LIGHT && it.canPower && it.online }
+                val allLights = devices.filter { vm.isLight(it) && it.canPower && it.online }
                 if (allLights.isNotEmpty()) {
                     item(key = "house-lights", span = { GridItemSpan(maxLineSpan) }) { HouseLights(vm, allLights) }
                 }
@@ -291,7 +315,7 @@ fun HomeScreen(vm: HomeViewModel, openSettings: () -> Unit) {
                 groups.forEach { (room, list) ->
                     item(key = "room:$room", span = { GridItemSpan(maxLineSpan) }) {
                         // Light switch for the whole room uses every light in it, not only the ones the filter shows.
-                        val lights = devices.filter { vm.room(it) == room && it.kind == Kind.LIGHT && it.canPower && it.online }
+                        val lights = devices.filter { vm.room(it) == room && vm.isLight(it) && it.canPower && it.online }
                         RoomHeader(vm, room, lights)
                     }
                     items(list, key = { it.key }) { d -> DeviceTile(vm, d) { selected = d.key } }
@@ -384,12 +408,12 @@ fun DeviceTile(vm: HomeViewModel, d: Device, onOpen: () -> Unit) {
     val active = d.online && (d.on == true || ((d.kind == Kind.CURTAIN || d.kind == Kind.BLIND) && (d.position ?: 0) > 0))
     val bg = when {
         !active -> Palette.Tile
-        d.kind == Kind.LIGHT -> Palette.TileOnLight
+        vm.isLight(d) -> Palette.TileOnLight
         else -> Palette.TileOnOther
     }
     val fg = when {
         !active -> Color.White
-        d.kind == Kind.LIGHT -> Palette.OnLightText
+        vm.isLight(d) -> Palette.OnLightText
         else -> Palette.OnOtherText
     }
     val shape = RoundedCornerShape(28.dp)
@@ -414,7 +438,7 @@ fun DeviceTile(vm: HomeViewModel, d: Device, onOpen: () -> Unit) {
             ),
     ) {
         Row(Modifier.padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(kindIcon(d.kind, d.on), null, Modifier.size(28.dp))
+            Icon(kindIcon(if (vm.isLight(d)) Kind.LIGHT else d.kind, d.on), null, Modifier.size(28.dp))
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(
@@ -487,6 +511,7 @@ fun DeviceSheet(vm: HomeViewModel, d: Device, onDismiss: () -> Unit) {
             if (d.canPosition) PositionControl(vm, d)
 
             HorizontalDivider()
+            CategoryPicker(vm, d)
             NameAndRoom(vm, d)
         }
     }
@@ -694,5 +719,70 @@ private fun NameAndRoom(vm: HomeViewModel, d: Device) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+/** Turns top-bar categories on and off. "Wszystkie urządzenia" always stays. */
+@Composable
+private fun ChipsDialog(vm: HomeViewModel, onDismiss: () -> Unit) {
+    vm.version
+    val hidden = vm.hiddenFilters()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Kategorie na górze") },
+        text = {
+            Column {
+                Filter.entries.filter { it != Filter.ALL }.forEach { f ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { vm.setFilterHidden(f, f !in hidden) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(f.label, style = MaterialTheme.typography.bodyLarge)
+                            if (f == Filter.FAV) {
+                                Text(
+                                    "Widoczne, gdy masz ulubione",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        Switch(checked = f !in hidden, onCheckedChange = { vm.setFilterHidden(f, !it) })
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Gotowe") } },
+    )
+}
+
+/** Moves a device to another category, e.g. a plug with a lamp into "Oświetlenie". */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CategoryPicker(vm: HomeViewModel, d: Device) {
+    val manual = vm.category(d)
+    val auto = Filter.entries.firstOrNull { it != Filter.FAV && it != Filter.ALL && it.auto(d) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Kategoria", style = MaterialTheme.typography.titleSmall)
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            FilterChip(
+                selected = manual == null,
+                onClick = { vm.setCategory(d, null) },
+                label = { Text("Automatycznie" + (auto?.let { " (${it.label})" } ?: "")) },
+            )
+            Filter.entries.filter { it != Filter.FAV && it != Filter.ALL }.forEach { f ->
+                FilterChip(
+                    selected = manual == f,
+                    onClick = { vm.setCategory(d, f) },
+                    label = { Text(f.label) },
+                )
+            }
+        }
     }
 }

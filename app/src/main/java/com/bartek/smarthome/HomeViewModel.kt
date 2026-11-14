@@ -99,6 +99,26 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     fun room(d: Device) = store.room(d.key).ifBlank { DEFAULT_ROOM }
     fun rooms(): List<String> = devices.map { room(it) }.distinct().sortedBy { it.lowercase() }
     fun isFav(d: Device) = store.isFavorite(d.key)
+    fun anyFav() = devices.any { isFav(it) }
+
+    /** Category picked by hand, or null when it follows the device type. */
+    fun category(d: Device): Filter? = Filter.entries.firstOrNull { it.name == store.category(d.key) }
+    fun setCategory(d: Device, f: Filter?) {
+        store.setCategory(d.key, f?.name ?: "")
+        bump()
+    }
+    fun matches(f: Filter, d: Device): Boolean = f.match(d, isFav(d), category(d))
+
+    /** Treated as a light: real bulbs, or e.g. a plug with a lamp moved to "Oświetlenie". */
+    fun isLight(d: Device): Boolean = category(d)?.let { it == Filter.LIGHTS } ?: (d.kind == Kind.LIGHT)
+
+    fun hiddenFilters(): Set<Filter> = store.hiddenFilters().mapNotNull { n -> Filter.entries.firstOrNull { it.name == n } }.toSet()
+    fun setFilterHidden(f: Filter, hidden: Boolean) {
+        val s = store.hiddenFilters().toMutableSet()
+        if (hidden) s += f.name else s -= f.name
+        store.setHiddenFilters(s)
+        bump()
+    }
 
     fun toggleFav(d: Device) {
         store.setFavorite(d.key, !store.isFavorite(d.key))

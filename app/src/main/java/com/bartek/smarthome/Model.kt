@@ -93,6 +93,12 @@ class Store(context: Context) {
     fun setRoom(k: String, r: String) = set("room:$k", r.trim())
     fun alias(k: String) = get("alias:$k")
     fun setAlias(k: String, a: String) = set("alias:$k", a.trim())
+    /** Category chosen by hand (Filter name), empty = automatic from the device type. */
+    fun category(k: String) = get("cat:$k")
+    fun setCategory(k: String, c: String) = set("cat:$k", c)
+    /** Filter chips hidden from the top bar (Filter names). */
+    fun hiddenFilters(): Set<String> = get("hiddenFilters").split(',').filter { it.isNotBlank() }.toSet()
+    fun setHiddenFilters(s: Set<String>) = set("hiddenFilters", s.joinToString(","))
 
     /** All settings (accounts, rooms, names, favourites, paired TVs) as one JSON file. */
     fun exportJson(): String {
