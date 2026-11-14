@@ -1,6 +1,7 @@
 package com.bartek.smarthome
 
 import android.app.Application
+import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -12,6 +13,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.IOException
 
 class HomeViewModel(app: Application) : AndroidViewModel(app) {
     val store = Store(app)
@@ -102,6 +104,48 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         store.setAlias(d.key, if (name.trim() == d.name) "" else name)
         store.setRoom(d.key, room)
         bump()
+    }
+
+    // ----- saving and backup -----
+
+    fun saveNow() {
+        tapo.resetSessions()
+        bump()
+        snack = "Ustawienia zapisane"
+        refresh()
+    }
+
+    fun exportSettings(uri: Uri) {
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    val out = getApplication<Application>().contentResolver.openOutputStream(uri, "wt")
+                        ?: throw IOException("Nie można zapisać pliku")
+                    out.use { it.write(store.exportJson().toByteArray()) }
+                }
+                snack = "Zapisano kopię ustawień"
+            } catch (e: Exception) {
+                snack = "Błąd zapisu: ${e.message}"
+            }
+        }
+    }
+
+    fun importSettings(uri: Uri) {
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    val inp = getApplication<Application>().contentResolver.openInputStream(uri)
+                        ?: throw IOException("Nie można otworzyć pliku")
+                    store.importJson(inp.use { String(it.readBytes()) })
+                }
+                tapo.resetSessions()
+                bump()
+                snack = "Przywrócono ustawienia"
+                refresh()
+            } catch (e: Exception) {
+                snack = "Błąd wczytywania: ${e.message}"
+            }
+        }
     }
 
     // ----- eWeLink -----

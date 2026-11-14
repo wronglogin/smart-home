@@ -6,6 +6,8 @@ import android.net.Uri
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,7 +35,14 @@ fun SettingsScreen(vm: HomeViewModel, openEweLinkLogin: () -> Unit) {
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("Konta i urządzenia", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "Konta i urządzenia",
+                style = MaterialTheme.typography.headlineMedium,
+                modifier = Modifier.padding(8.dp).weight(1f),
+            )
+            Button(onClick = { vm.saveNow() }) { Text("Zapisz") }
+        }
 
         Section(
             "SwitchBot", vm.switchBot.isConfigured(),
@@ -116,6 +125,8 @@ fun SettingsScreen(vm: HomeViewModel, openEweLinkLogin: () -> Unit) {
             vm.tv.tvs().forEach { (ip, name) -> ListRow(name, ip) { vm.tv.removeTv(ip); vm.bump() } }
         }
 
+        BackupSection(vm)
+
         Text(
             "Klucze i hasła są zapisane tylko na tym telefonie.",
             style = MaterialTheme.typography.bodySmall,
@@ -125,6 +136,29 @@ fun SettingsScreen(vm: HomeViewModel, openEweLinkLogin: () -> Unit) {
     }
 
     if (vm.pairing != null) PairingDialog(vm)
+}
+
+@Composable
+private fun BackupSection(vm: HomeViewModel) {
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) vm.exportSettings(uri)
+    }
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.importSettings(uri)
+    }
+    Section(
+        "Kopia ustawień", false,
+        "Ustawienia zapisują się od razu i zostają po aktualizacji aplikacji. Plik kopii przyda się, gdy odinstalujesz aplikację albo zmienisz telefon – zawiera klucze i hasła, więc trzymaj go u siebie.",
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilledTonalButton(onClick = { exportLauncher.launch("MojDom-ustawienia.json") }, modifier = Modifier.weight(1f)) {
+                Text("Zapisz do pliku")
+            }
+            OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }, modifier = Modifier.weight(1f)) {
+                Text("Wczytaj z pliku")
+            }
+        }
+    }
 }
 
 @Composable
@@ -167,7 +201,7 @@ private fun Section(title: String, connected: Boolean, help: String, content: @C
 
 @Composable
 private fun Field(vm: HomeViewModel, key: String, label: String, secret: Boolean = true, default: String = "") {
-    var v by remember(key) { mutableStateOf(vm.store.get(key).ifBlank { default }) }
+    var v by remember(key, vm.version) { mutableStateOf(vm.store.get(key).ifBlank { default }) }
     var show by remember { mutableStateOf(!secret) }
     OutlinedTextField(
         value = v,
