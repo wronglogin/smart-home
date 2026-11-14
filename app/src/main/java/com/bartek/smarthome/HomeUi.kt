@@ -229,7 +229,7 @@ fun HomeScreen(vm: HomeViewModel, openSettings: () -> Unit) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 20.dp)) {
                     Icon(Icons.Outlined.Home, null)
                     Spacer(Modifier.width(14.dp))
-                    Text("Mój dom", style = MaterialTheme.typography.titleLarge)
+                    Text("Różana", style = MaterialTheme.typography.titleLarge)
                 }
             }
             Spacer(Modifier.width(10.dp))

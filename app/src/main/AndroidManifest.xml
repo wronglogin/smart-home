@@ -8,7 +8,7 @@
 
     <!-- Cleartext is needed for Tapo devices, which speak plain HTTP (with their own encryption) on the home network. -->
     <application
-        android:label="Mój Dom"
+        android:label="Różana"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
         android:theme="@style/Theme.SmartHome"
