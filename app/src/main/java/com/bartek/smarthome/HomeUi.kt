@@ -47,6 +47,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -64,6 +67,55 @@ object Palette {
     val ChipSel = Color(0xFF3D4A66)
     val Primary = Color(0xFFA8C7FA)
     val Bar = Color(0xFF26272A)
+    val SegIdle = Color(0xFF3A3C3F)
+    val SegActive = Color(0xFF4B4628)
+    val SegAccent = Color(0xFFFFD97A)
+}
+
+/**
+ * Two buttons joined into one pill: outer corners round, inner corners almost square.
+ * [active] = 0 highlights the left half, 1 the right one, null neither.
+ */
+@Composable
+fun SplitButtons(
+    left: String,
+    right: String,
+    active: Int?,
+    onLeft: () -> Unit,
+    onRight: () -> Unit,
+    modifier: Modifier = Modifier,
+    height: Dp = 56.dp,
+) {
+    val outer = height / 2
+    val inner = 4.dp
+    Row(modifier.fillMaxWidth().height(height), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        SplitHalf(left, active == 0, RoundedCornerShape(outer, inner, inner, outer), onLeft)
+        SplitHalf(right, active == 1, RoundedCornerShape(inner, outer, outer, inner), onRight)
+    }
+}
+
+@Composable
+private fun RowScope.SplitHalf(label: String, active: Boolean, shape: Shape, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .weight(1f)
+            .fillMaxHeight()
+            .clip(shape)
+            .background(if (active) Palette.SegActive else Palette.SegIdle)
+            .then(if (active) Modifier.border(2.dp, Palette.SegAccent, shape) else Modifier)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            color = if (active) Palette.SegAccent else Color(0xFFE8E8E8),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
 }
 
 @Composable
@@ -256,20 +308,31 @@ fun HomeScreen(vm: HomeViewModel, openSettings: () -> Unit) {
 private fun HouseLights(vm: HomeViewModel, lights: List<Device>) {
     val onCount = lights.count { it.on == true }
     Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(if (onCount > 0) Icons.Filled.Lightbulb else Icons.Outlined.Lightbulb, null, Modifier.size(28.dp))
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text("Światła w domu", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-                Text(
-                    if (onCount == 0) "Wszystkie wyłączone" else "Włączone: $onCount z ${lights.size}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(if (onCount > 0) Icons.Filled.Lightbulb else Icons.Outlined.Lightbulb, null, Modifier.size(28.dp))
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Światła w domu", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 1)
+                    Text(
+                        if (onCount == 0) "Wszystkie wyłączone" else "Włączone: $onCount z ${lights.size}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
             }
-            OutlinedButton(onClick = { vm.setLights(lights, true) }) { Text("Włącz") }
-            Spacer(Modifier.width(8.dp))
-            Button(onClick = { vm.setLights(lights, false) }) { Text("Wyłącz") }
+            SplitButtons(
+                left = "Włącz wszystkie",
+                right = "Wyłącz wszystkie",
+                active = when (onCount) {
+                    0 -> 1
+                    lights.size -> 0
+                    else -> null
+                },
+                onLeft = { vm.setLights(lights, true) },
+                onRight = { vm.setLights(lights, false) },
+            )
         }
     }
 }
@@ -467,10 +530,17 @@ private fun PowerToggle(vm: HomeViewModel, d: Device) {
 
 @Composable
 private fun PowerButtons(vm: HomeViewModel, d: Device) {
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Button(onClick = { vm.send(d, Command.Power(true)) }, modifier = Modifier.weight(1f).height(52.dp)) { Text("Włącz") }
-        OutlinedButton(onClick = { vm.send(d, Command.Power(false)) }, modifier = Modifier.weight(1f).height(52.dp)) { Text("Wyłącz") }
-    }
+    SplitButtons(
+        left = "Włącz",
+        right = "Wyłącz",
+        active = when (d.on) {
+            true -> 0
+            false -> 1
+            null -> null
+        },
+        onLeft = { vm.send(d, Command.Power(true)) },
+        onRight = { vm.send(d, Command.Power(false)) },
+    )
 }
 
 @Composable
@@ -528,10 +598,13 @@ private fun PositionControl(vm: HomeViewModel, d: Device) {
                 onValueChangeFinished = { vm.send(d, Command.Position(v.roundToInt())) },
             )
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(onClick = { vm.send(d, Command.Position(100)) }, modifier = Modifier.weight(1f).height(52.dp)) { Text("Otwórz") }
-            OutlinedButton(onClick = { vm.send(d, Command.Position(0)) }, modifier = Modifier.weight(1f).height(52.dp)) { Text("Zamknij") }
-        }
+        SplitButtons(
+            left = "Otwórz",
+            right = "Zamknij",
+            active = d.position?.let { if (it >= 100) 0 else if (it <= 0) 1 else null },
+            onLeft = { vm.send(d, Command.Position(100)) },
+            onRight = { vm.send(d, Command.Position(0)) },
+        )
     }
 }
 
