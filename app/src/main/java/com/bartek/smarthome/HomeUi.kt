@@ -223,6 +223,10 @@ fun HomeScreen(vm: HomeViewModel, openSettings: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
+                val allLights = devices.filter { it.kind == Kind.LIGHT && it.canPower && it.online }
+                if (allLights.isNotEmpty()) {
+                    item(key = "house-lights", span = { GridItemSpan(maxLineSpan) }) { HouseLights(vm, allLights) }
+                }
                 if (shown.isEmpty() && !vm.loading) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         Text(
@@ -246,6 +250,28 @@ fun HomeScreen(vm: HomeViewModel, openSettings: () -> Unit) {
 
     val sel = devices.firstOrNull { it.key == selected }
     if (sel != null) DeviceSheet(vm, sel) { selected = null }
+}
+
+@Composable
+private fun HouseLights(vm: HomeViewModel, lights: List<Device>) {
+    val onCount = lights.count { it.on == true }
+    Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(if (onCount > 0) Icons.Filled.Lightbulb else Icons.Outlined.Lightbulb, null, Modifier.size(28.dp))
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Światła w domu", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                Text(
+                    if (onCount == 0) "Wszystkie wyłączone" else "Włączone: $onCount z ${lights.size}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            OutlinedButton(onClick = { vm.setLights(lights, true) }) { Text("Włącz") }
+            Spacer(Modifier.width(8.dp))
+            Button(onClick = { vm.setLights(lights, false) }) { Text("Wyłącz") }
+        }
+    }
 }
 
 @Composable
