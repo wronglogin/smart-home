@@ -80,6 +80,11 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Turns every given light on or off at once (e.g. a whole room). */
+    fun setLights(lights: List<Device>, on: Boolean) {
+        lights.filter { it.on != on }.forEach { send(it, Command.Power(on)) }
+    }
+
     private fun optimistic(d: Device, cmd: Command): Device = when (cmd) {
         is Command.Power -> if (d.kind == Kind.IR) d else d.copy(on = cmd.on)
         is Command.Brightness -> d.copy(brightness = cmd.value, on = if (d.canPower) true else d.on)

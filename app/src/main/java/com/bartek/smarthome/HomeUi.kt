@@ -234,11 +234,9 @@ fun HomeScreen(vm: HomeViewModel, openSettings: () -> Unit) {
                 }
                 groups.forEach { (room, list) ->
                     item(key = "room:$room", span = { GridItemSpan(maxLineSpan) }) {
-                        Text(
-                            room,
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.padding(start = 8.dp, top = 12.dp, bottom = 2.dp),
-                        )
+                        // Light switch for the whole room uses every light in it, not only the ones the filter shows.
+                        val lights = devices.filter { vm.room(it) == room && it.kind == Kind.LIGHT && it.canPower && it.online }
+                        RoomHeader(vm, room, lights)
                     }
                     items(list, key = { it.key }) { d -> DeviceTile(vm, d) { selected = d.key } }
                 }
@@ -248,6 +246,27 @@ fun HomeScreen(vm: HomeViewModel, openSettings: () -> Unit) {
 
     val sel = devices.firstOrNull { it.key == selected }
     if (sel != null) DeviceSheet(vm, sel) { selected = null }
+}
+
+@Composable
+private fun RoomHeader(vm: HomeViewModel, room: String, lights: List<Device>) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 8.dp, top = 12.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(room, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+        if (lights.isNotEmpty()) {
+            val anyOn = lights.any { it.on == true }
+            val count = lights.count { it.on == true }
+            Text(
+                if (anyOn) "Światła: $count/${lights.size}" else "Światła wył.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.width(8.dp))
+            Switch(checked = anyOn, onCheckedChange = { vm.setLights(lights, it) })
+        }
+    }
 }
 
 @Composable
