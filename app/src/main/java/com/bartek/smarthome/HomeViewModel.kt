@@ -58,6 +58,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             }
             devices = list.distinctBy { it.key }
             errors = errs
+            Engine.onDevices(getApplication(), devices)
             loading = false
         }
     }
@@ -146,34 +147,40 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         AutomationScheduler.scheduleAll(app)
+        if (Monitor.enabled(store)) AutomationService.sync(app)
+    }
+
+    /** Re-reads alarms and background watching after any automation change. */
+    fun automationSettingsChanged() {
+        AutomationScheduler.scheduleAll(getApplication())
+        AutomationService.sync(getApplication())
+        bump()
     }
 
     fun saveAutomation(a: Automation) {
         automations = AutomationStore.upsert(store, a)
-        AutomationScheduler.scheduleAll(getApplication())
+        automationSettingsChanged()
         snack = "Zapisano automatyzację „${a.name}”"
     }
 
     fun setAutomationEnabled(a: Automation, enabled: Boolean) {
         automations = AutomationStore.upsert(store, a.copy(enabled = enabled))
-        AutomationScheduler.scheduleAll(getApplication())
+        automationSettingsChanged()
     }
 
     fun deleteAutomation(id: String) {
         automations = AutomationStore.remove(store, id)
         AutomationScheduler.cancel(getApplication(), id)
-        AutomationScheduler.scheduleAll(getApplication())
+        automationSettingsChanged()
     }
 
+    /** Manual run (▶): skips conditions and runs in the background service, so delays keep going after closing the app. */
     fun runAutomation(a: Automation) {
+        AutomationService.run(getApplication(), a.id, force = true)
+        snack = "Uruchomiono „${a.name}”"
         viewModelScope.launch {
-            snack = "${a.name}: uruchamiam…"
-            val msg = try {
-                AutomationRunner.run(getApplication(), a, sources)
-            } catch (e: Exception) {
-                "błąd – ${e.message}"
-            }
-            snack = "${a.name}: $msg"
+            kotlinx.coroutines.delay(4000)
+            automations = AutomationStore.load(store)
             bump()
             refresh()
         }
@@ -215,8 +222,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 tapo.resetSessions()
                 automations = AutomationStore.load(store)
-                AutomationScheduler.scheduleAll(getApplication())
-                bump()
+                automationSettingsChanged()
                 snack = "Przywrócono ustawienia"
                 refresh()
             } catch (e: Exception) {

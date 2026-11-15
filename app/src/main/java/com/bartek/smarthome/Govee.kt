@@ -56,29 +56,35 @@ class GoveeSource(private val store: Store) : DeviceSource {
             model = sku, canPower = "powerSwitch" in inst, canBrightness = "brightness" in inst,
             canColor = "colorRgb" in inst, meta = mapOf("sku" to sku, "device" to mac),
         )
-        return try {
-            val o = post("/device/state", JSONObject().put("sku", sku).put("device", mac))
-            val cs = o.optJSONObject("payload")?.optJSONArray("capabilities") ?: JSONArray()
-            var r = dev
-            for (i in 0 until cs.length()) {
-                val c = cs.getJSONObject(i)
-                val v = c.optJSONObject("state")?.opt("value")
-                r = when (c.optString("instance")) {
-                    "online" -> r.copy(online = v == true || v == "true")
-                    "powerSwitch" -> r.copy(on = (v as? Number)?.toInt() == 1)
-                    "brightness" -> r.copy(brightness = (v as? Number)?.toInt())
-                    "colorRgb" -> r.copy(color = (v as? Number)?.toInt()?.takeIf { it > 0 })
-                    // Govee reports thermometers in °F
-                    "sensorTemperature" -> r.copy(temperature = num(v)?.let { if (it > 45) (it - 32) * 5 / 9 else it })
-                    "sensorHumidity" -> r.copy(humidity = num(v))
-                    "battery" -> r.copy(battery = num(v)?.toInt())
-                    else -> r
-                }
+        return state(dev)
+    }
+
+    private suspend fun state(dev: Device): Device = try {
+        val o = post("/device/state", JSONObject().put("sku", dev.meta["sku"]).put("device", dev.meta["device"]))
+        val cs = o.optJSONObject("payload")?.optJSONArray("capabilities") ?: JSONArray()
+        var r = dev.copy(online = true)
+        for (i in 0 until cs.length()) {
+            val c = cs.getJSONObject(i)
+            val v = c.optJSONObject("state")?.opt("value")
+            r = when (c.optString("instance")) {
+                "online" -> r.copy(online = v == true || v == "true")
+                "powerSwitch" -> r.copy(on = (v as? Number)?.toInt() == 1)
+                "brightness" -> r.copy(brightness = (v as? Number)?.toInt())
+                "colorRgb" -> r.copy(color = (v as? Number)?.toInt()?.takeIf { it > 0 })
+                // Govee reports thermometers in °F
+                "sensorTemperature" -> r.copy(temperature = num(v)?.let { if (it > 45) (it - 32) * 5 / 9 else it })
+                "sensorHumidity" -> r.copy(humidity = num(v))
+                "battery" -> r.copy(battery = num(v)?.toInt())
+                else -> r
             }
-            r
-        } catch (e: Exception) {
-            dev.copy(online = false, extra = e.message)
         }
+        r
+    } catch (e: Exception) {
+        dev.copy(online = false, extra = e.message)
+    }
+
+    override suspend fun refresh(list: List<Device>): List<Device> = coroutineScope {
+        list.map { d -> async { state(d) } }.awaitAll()
     }
 
     private fun num(v: Any?): Double? = when (v) {

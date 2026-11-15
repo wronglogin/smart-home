@@ -11,6 +11,10 @@
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <!-- Cleartext is needed for Tapo devices, which speak plain HTTP (with their own encryption) on the home network. -->
     <application
@@ -32,6 +36,10 @@
         </activity>
 
         <receiver android:name=".AutomationReceiver" android:exported="false" />
+        <service
+            android:name=".AutomationService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
         <receiver android:name=".BootReceiver" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

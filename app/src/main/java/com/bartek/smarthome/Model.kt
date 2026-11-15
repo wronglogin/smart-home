@@ -62,6 +62,12 @@ interface DeviceSource {
     fun isConfigured(): Boolean
     suspend fun devices(): List<Device>
     suspend fun send(device: Device, cmd: Command)
+
+    /** Fresh state of just these devices (used by automations, so background checks stay cheap). */
+    suspend fun refresh(list: List<Device>): List<Device> {
+        val keys = list.map { it.key }.toSet()
+        return devices().filter { it.key in keys }
+    }
 }
 
 /** Everything the app keeps: account keys, rooms, names, favourites. Stays on the phone only. */

@@ -79,27 +79,41 @@ class SwitchBotSource(private val store: Store) : DeviceSource {
             canPosition = kind == Kind.CURTAIN || kind == Kind.BLIND,
         )
         return try {
-            val s = api("/devices/$id/status")
-            dev.copy(
-                on = s.optString("power").takeIf { it.isNotEmpty() }?.let { it.equals("on", true) },
-                brightness = if (s.has("brightness")) s.optInt("brightness") else null,
-                color = parseRgb(s.optString("color")),
-                position = if (s.has("slidePosition")) {
-                    val p = s.optInt("slidePosition")
-                    if (kind == Kind.BLIND) 100 - abs(p - 50) * 2 else 100 - p
-                } else null,
-                temperature = if (s.has("temperature")) s.optDouble("temperature") else null,
-                humidity = if (s.has("humidity")) s.optDouble("humidity") else null,
-                battery = if (s.has("battery")) s.optInt("battery") else null,
-                extra = when {
-                    s.has("openState") -> if (s.optString("openState") == "close") "Zamknięte" else "Otwarte"
-                    s.has("moveDetected") -> if (s.optBoolean("moveDetected")) "Wykryto ruch" else "Brak ruchu"
-                    else -> null
-                },
-            )
+            applyStatus(dev, api("/devices/$id/status"))
         } catch (e: Exception) {
             dev.copy(online = false, extra = e.message)
         }
+    }
+
+    private fun applyStatus(dev: Device, s: JSONObject): Device = dev.copy(
+        online = true,
+        on = s.optString("power").takeIf { it.isNotEmpty() }?.let { it.equals("on", true) },
+        brightness = if (s.has("brightness")) s.optInt("brightness") else null,
+        color = parseRgb(s.optString("color")),
+        position = if (s.has("slidePosition")) {
+            val p = s.optInt("slidePosition")
+            if (dev.kind == Kind.BLIND) 100 - abs(p - 50) * 2 else 100 - p
+        } else null,
+        temperature = if (s.has("temperature")) s.optDouble("temperature") else null,
+        humidity = if (s.has("humidity")) s.optDouble("humidity") else null,
+        battery = if (s.has("battery")) s.optInt("battery") else null,
+        extra = when {
+            s.has("openState") -> if (s.optString("openState") == "close") "Zamknięte" else "Otwarte"
+            s.has("moveDetected") -> if (s.optBoolean("moveDetected")) "Wykryto ruch" else "Brak ruchu"
+            else -> null
+        },
+    )
+
+    override suspend fun refresh(list: List<Device>): List<Device> = coroutineScope {
+        list.filter { it.meta["ir"] != "1" }.map { d ->
+            async {
+                try {
+                    applyStatus(d, api("/devices/${d.id}/status"))
+                } catch (e: Exception) {
+                    d.copy(online = false, extra = e.message)
+                }
+            }
+        }.awaitAll()
     }
 
     private fun parseRgb(s: String): Int? {

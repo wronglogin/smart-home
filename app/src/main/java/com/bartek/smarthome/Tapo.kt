@@ -153,8 +153,13 @@ class TapoSource(private val store: Store, private val context: Context) : Devic
         s
     }
 
-    override suspend fun devices(): List<Device> = coroutineScope {
-        ips().map { ip ->
+    override suspend fun devices(): List<Device> = read(ips())
+
+    override suspend fun refresh(list: List<Device>): List<Device> =
+        read(list.mapNotNull { it.meta["ip"] }.distinct())
+
+    private suspend fun read(ipList: List<String>): List<Device> = coroutineScope {
+        ipList.map { ip ->
             async {
                 try {
                     val r = call(ip, "get_device_info")
