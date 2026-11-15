@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -54,15 +55,14 @@ fun App(vm: HomeViewModel = viewModel()) {
         }
     }
 
-    fun goHome() {
-        if (tab != 0) {
-            tab = 0
-            vm.onSettingsClosed()
-        }
+    // Tabs: 0 = home, 1 = automations, 2 = settings. Leaving settings reloads devices with the new accounts.
+    fun select(t: Int) {
+        if (tab == 2 && t != 2) vm.onSettingsClosed()
+        tab = t
     }
 
     BackHandler(enabled = eweLogin || tab != 0) {
-        if (eweLogin) eweLogin = false else goHome()
+        if (eweLogin) eweLogin = false else select(0)
     }
 
     Scaffold(
@@ -73,13 +73,19 @@ fun App(vm: HomeViewModel = viewModel()) {
                 NavigationBar(containerColor = Palette.Bar) {
                     NavigationBarItem(
                         selected = tab == 0,
-                        onClick = { goHome() },
+                        onClick = { select(0) },
                         icon = { Icon(Icons.Filled.Home, null) },
                         label = { Text("Strona główna") },
                     )
                     NavigationBarItem(
                         selected = tab == 1,
-                        onClick = { tab = 1 },
+                        onClick = { select(1) },
+                        icon = { Icon(Icons.Outlined.Schedule, null) },
+                        label = { Text("Automatyzacja") },
+                    )
+                    NavigationBarItem(
+                        selected = tab == 2,
+                        onClick = { select(2) },
                         icon = { Icon(Icons.Outlined.Settings, null) },
                         label = { Text("Ustawienia") },
                     )
@@ -90,7 +96,8 @@ fun App(vm: HomeViewModel = viewModel()) {
         Box(Modifier.padding(pad).fillMaxSize()) {
             when {
                 eweLogin -> EweLinkLoginScreen(vm) { eweLogin = false }
-                tab == 0 -> HomeScreen(vm) { tab = 1 }
+                tab == 0 -> HomeScreen(vm) { select(2) }
+                tab == 1 -> AutomationScreen(vm)
                 else -> SettingsScreen(vm) { eweLogin = true }
             }
         }

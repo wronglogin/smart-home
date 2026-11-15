@@ -139,6 +139,48 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         bump()
     }
 
+    // ----- automations -----
+
+    var automations by mutableStateOf(AutomationStore.load(store))
+        private set
+
+    init {
+        AutomationScheduler.scheduleAll(app)
+    }
+
+    fun saveAutomation(a: Automation) {
+        automations = AutomationStore.upsert(store, a)
+        AutomationScheduler.scheduleAll(getApplication())
+        snack = "Zapisano automatyzację „${a.name}”"
+    }
+
+    fun setAutomationEnabled(a: Automation, enabled: Boolean) {
+        automations = AutomationStore.upsert(store, a.copy(enabled = enabled))
+        AutomationScheduler.scheduleAll(getApplication())
+    }
+
+    fun deleteAutomation(id: String) {
+        automations = AutomationStore.remove(store, id)
+        AutomationScheduler.cancel(getApplication(), id)
+        AutomationScheduler.scheduleAll(getApplication())
+    }
+
+    fun runAutomation(a: Automation) {
+        viewModelScope.launch {
+            snack = "${a.name}: uruchamiam…"
+            val msg = try {
+                AutomationRunner.run(getApplication(), a, sources)
+            } catch (e: Exception) {
+                "błąd – ${e.message}"
+            }
+            snack = "${a.name}: $msg"
+            bump()
+            refresh()
+        }
+    }
+
+    fun lastRun(a: Automation): String? = formatLastRun(store.get("auto_last:${a.id}"))
+
     // ----- saving and backup -----
 
     fun saveNow() {
@@ -172,6 +214,8 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                     store.importJson(inp.use { String(it.readBytes()) })
                 }
                 tapo.resetSessions()
+                automations = AutomationStore.load(store)
+                AutomationScheduler.scheduleAll(getApplication())
                 bump()
                 snack = "Przywrócono ustawienia"
                 refresh()
