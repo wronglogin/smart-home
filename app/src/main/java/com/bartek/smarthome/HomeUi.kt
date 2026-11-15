@@ -319,7 +319,7 @@ fun HomeScreen(vm: HomeViewModel, openSettings: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                val allLights = devices.filter { vm.isLight(it) && it.canPower && it.online && !vm.isHidden(it) }
+                val allLights = devices.filter { vm.isLight(it) && it.canPower && it.online }
                 if (allLights.isNotEmpty()) {
                     item(key = "house-lights", span = { GridItemSpan(maxLineSpan) }) { HouseLights(vm, allLights) }
                 }
@@ -335,7 +335,7 @@ fun HomeScreen(vm: HomeViewModel, openSettings: () -> Unit) {
                 groups.forEach { (room, list) ->
                     item(key = "room:$room", span = { GridItemSpan(maxLineSpan) }) {
                         // Light switch for the whole room uses every light in it, not only the ones the filter shows.
-                        val lights = devices.filter { vm.room(it) == room && vm.isLight(it) && it.canPower && it.online && !vm.isHidden(it) }
+                        val lights = devices.filter { vm.room(it) == room && vm.isLight(it) && it.canPower && it.online }
                         RoomHeader(vm, room, lights)
                     }
                     items(list, key = { it.key }) { d -> DeviceTile(vm, d) { selected = d.key } }
@@ -547,7 +547,7 @@ fun DeviceSheet(vm: HomeViewModel, d: Device, onDismiss: () -> Unit) {
                 Column(Modifier.weight(1f)) {
                     Text("Ukryj urządzenie", style = MaterialTheme.typography.titleSmall)
                     Text(
-                        "Nie będzie widoczne na liście ani włączane z pokojem i domem",
+                        "Nie będzie widoczne na liście, ale dalej włącza się i wyłącza z całym pokojem i domem",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

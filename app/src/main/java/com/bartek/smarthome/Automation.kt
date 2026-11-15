@@ -459,7 +459,7 @@ object Engine {
                 }
                 StepType.ALL_LIGHTS, StepType.ROOM_LIGHTS -> {
                     val lights = everything().filter { d ->
-                        isLightDevice(store, d) && d.canPower && d.online && !store.isHidden(d.key) &&
+                        isLightDevice(store, d) && d.canPower && d.online &&
                             (step.type == StepType.ALL_LIGHTS || store.room(d.key).ifBlank { DEFAULT_ROOM } == step.room)
                     }
                     coroutineScope { lights.map { d -> async { send(d, Command.Power(step.on)) } }.awaitAll() }
