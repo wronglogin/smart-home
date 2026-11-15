@@ -142,6 +142,14 @@ fun SettingsScreen(vm: HomeViewModel, openEweLinkLogin: () -> Unit) {
             )
         }
 
+        Section(
+            "Sterowanie głosowe", false,
+            "Przycisk 🎤 na stronie głównej albo skrót „Komenda głosowa” (przytrzymaj ikonę aplikacji). Przykłady: „włącz światło w kuchni”, „wyłącz wszystkie światła”, „ustaw jasność lampy na 30 procent”, „otwórz rolety w salonie”, „jaka jest temperatura w sypialni”, „uruchom dobranoc”.",
+        ) {
+            ToggleRow(vm, K_VOICE_HA, "Wysyłaj komendy do Home Assistanta", "Gdy HA jest połączony, rozumie komendy jego polski Asystent. Poza domem aplikacja zrozumie je sama.")
+            ToggleRow(vm, K_VOICE_SPEAK, "Czytaj odpowiedź na głos", "Polski głos telefonu.")
+        }
+
         BackupSection(vm)
 
         Text(
@@ -213,6 +221,19 @@ private fun Section(title: String, connected: Boolean, help: String, content: @C
             Text(help, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             content()
         }
+    }
+}
+
+/** On/off setting stored as "" (on, default) or "0" (off). */
+@Composable
+private fun ToggleRow(vm: HomeViewModel, key: String, title: String, hint: String) {
+    vm.version
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title)
+            Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = vm.store.get(key) != "0", onCheckedChange = { vm.store.set(key, if (it) "" else "0"); vm.bump() })
     }
 }
 

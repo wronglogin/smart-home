@@ -1,6 +1,8 @@
 package com.bartek.smarthome
 
+import android.content.Intent
 import android.os.Bundle
+import androidx.activity.viewModels
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -31,12 +33,28 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 class MainActivity : ComponentActivity() {
+    private val vm: HomeViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        if (savedInstanceState == null) handle(intent)
         setContent {
-            SmartHomeTheme { App() }
+            SmartHomeTheme { App(vm) }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handle(intent)
+    }
+
+    private fun handle(i: Intent?) {
+        if (i?.action == ACTION_VOICE) vm.voiceRequested = true
+    }
+
+    companion object {
+        const val ACTION_VOICE = "com.bartek.smarthome.VOICE"
     }
 }
 
@@ -47,6 +65,7 @@ fun App(vm: HomeViewModel = viewModel()) {
     val snackHost = remember { SnackbarHostState() }
 
     LaunchedEffect(Unit) { vm.refresh() }
+    LaunchedEffect(vm.voiceRequested) { if (vm.voiceRequested) tab = 0 }
     LaunchedEffect(vm.snack) {
         val s = vm.snack
         if (s != null) {

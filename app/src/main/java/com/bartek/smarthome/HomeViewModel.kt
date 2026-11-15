@@ -15,6 +15,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.IOException
 
+const val K_VOICE_HA = "voice_ha"
+const val K_VOICE_SPEAK = "voice_speak"
+
 class HomeViewModel(app: Application) : AndroidViewModel(app) {
     val store = Store(app)
     val switchBot = SwitchBotSource(store)
@@ -147,6 +150,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     init {
+        Speaker.init(app)
         AutomationScheduler.scheduleAll(app)
         if (Monitor.enabled(store)) AutomationService.sync(app)
     }
@@ -230,6 +234,41 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 snack = "Błąd wczytywania: ${e.message}"
             }
         }
+    }
+
+    // ----- voice -----
+
+    /** Set by the "Komenda głosowa" shortcut; the home screen opens the microphone. */
+    var voiceRequested by mutableStateOf(false)
+    var voiceBusy by mutableStateOf(false)
+        private set
+
+    fun voice(text: String) {
+        viewModelScope.launch {
+            voiceBusy = true
+            val useHa = homeAssistant.isConfigured() && store.get(K_VOICE_HA) != "0"
+            val reply = try {
+                if (useHa) homeAssistant.converse(text) else localVoice(text)
+            } catch (e: Exception) {
+                // HA not reachable (e.g. away from home): understand the command in the app instead
+                try { localVoice(text) } catch (e2: Exception) { "Błąd: ${e2.message}" }
+            }
+            snack = "„$text” – $reply"
+            if (store.get(K_VOICE_SPEAK) != "0") Speaker.say(reply)
+            voiceBusy = false
+            kotlinx.coroutines.delay(1500)
+            refresh()
+        }
+    }
+
+    private fun localVoice(text: String): String {
+        val r = VoiceParser.parse(
+            text, devices, automations,
+            nameOf = { name(it) }, roomOf = { room(it) }, isLight = { isLightDevice(store, it) },
+        )
+        r.actions.forEach { (d, c) -> send(d, c) }
+        r.automation?.let { AutomationService.run(getApplication(), it.id, force = true) }
+        return r.reply
     }
 
     // ----- Home Assistant -----

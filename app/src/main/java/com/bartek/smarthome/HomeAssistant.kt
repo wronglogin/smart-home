@@ -154,6 +154,12 @@ class HomeAssistantSource(private val store: Store) : DeviceSource {
         }
     }
 
+    /** Sends a spoken sentence to HA's Polish Assist and returns its answer. */
+    suspend fun converse(text: String): String {
+        val o = JSONObject(post("/api/conversation/process", JSONObject().put("text", text).put("language", "pl")))
+        return o.optJSONObject("response")?.optJSONObject("speech")?.optJSONObject("plain")?.optString("speech").orEmpty().ifBlank { "Gotowe" }
+    }
+
     /** Quick check for the settings screen: returns HA's version or throws. */
     suspend fun test(): String {
         val o = JSONObject(get("/api/config"))

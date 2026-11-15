@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="voice"
+        android:enabled="true"
+        android:icon="@drawable/ic_mic"
+        android:shortcutShortLabel="@string/voice_short"
+        android:shortcutLongLabel="@string/voice_long">
+        <intent
+            android:action="com.bartek.smarthome.VOICE"
+            android:targetPackage="com.bartek.smarthome"
+            android:targetClass="com.bartek.smarthome.MainActivity" />
+    </shortcut>
+</shortcuts>

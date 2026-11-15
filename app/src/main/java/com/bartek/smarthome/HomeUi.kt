@@ -1,5 +1,11 @@
 package com.bartek.smarthome
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.speech.RecognizerIntent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -235,6 +241,8 @@ fun HomeScreen(vm: HomeViewModel, openSettings: () -> Unit) {
                 }
             }
             Spacer(Modifier.width(10.dp))
+            VoiceButton(vm)
+            Spacer(Modifier.width(8.dp))
             FilledTonalIconButton(onClick = { vm.refresh() }, modifier = Modifier.size(56.dp)) {
                 if (vm.loading) {
                     CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
@@ -409,6 +417,39 @@ private fun RoomHeader(vm: HomeViewModel, room: String, lights: List<Device>) {
             )
             Spacer(Modifier.width(8.dp))
             Switch(checked = anyOn, onCheckedChange = { vm.setLights(lights, it) })
+        }
+    }
+}
+
+/** Microphone: Google speech recognition on the phone (Polish), then the command goes to HA or the app. */
+@Composable
+fun VoiceButton(vm: HomeViewModel) {
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        val text = r.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+        if (!text.isNullOrBlank()) vm.voice(text)
+    }
+    fun start() {
+        val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "pl-PL")
+            .putExtra(RecognizerIntent.EXTRA_PROMPT, "Np. „włącz światło w kuchni”")
+        try {
+            launcher.launch(i)
+        } catch (e: ActivityNotFoundException) {
+            vm.snack = "Brak rozpoznawania mowy – zainstaluj aplikację Google"
+        }
+    }
+    LaunchedEffect(vm.voiceRequested) {
+        if (vm.voiceRequested) {
+            vm.voiceRequested = false
+            start()
+        }
+    }
+    FilledTonalIconButton(onClick = { start() }, modifier = Modifier.size(56.dp)) {
+        if (vm.voiceBusy) {
+            CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+        } else {
+            Icon(Icons.Outlined.Mic, "Komenda głosowa")
         }
     }
 }
