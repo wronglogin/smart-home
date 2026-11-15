@@ -393,6 +393,7 @@ private fun HouseLights(vm: HomeViewModel, lights: List<Device>) {
 
 @Composable
 private fun RoomHeader(vm: HomeViewModel, room: String, lights: List<Device>) {
+    vm.version
     Row(
         Modifier.fillMaxWidth().padding(start = 8.dp, top = 12.dp, bottom = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -435,6 +436,7 @@ private fun EmptyState(openSettings: () -> Unit) {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DeviceTile(vm: HomeViewModel, d: Device, onOpen: () -> Unit) {
+    vm.version // the name comes from local settings, so redraw right after renaming
     val active = d.online && (d.on == true || ((d.kind == Kind.CURTAIN || d.kind == Kind.BLIND) && (d.position ?: 0) > 0))
     val bg = when {
         !active -> Palette.Tile
@@ -553,7 +555,7 @@ fun DeviceSheet(vm: HomeViewModel, d: Device, onDismiss: () -> Unit) {
                 Switch(checked = vm.isHidden(d), onCheckedChange = { vm.setHidden(d, it) })
             }
             CategoryPicker(vm, d)
-            NameAndRoom(vm, d)
+            NameAndRoom(vm, d, onSaved = onDismiss)
         }
     }
 }
@@ -736,7 +738,7 @@ private fun RemoteButton(icon: ImageVector, desc: String, onClick: () -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun NameAndRoom(vm: HomeViewModel, d: Device) {
+private fun NameAndRoom(vm: HomeViewModel, d: Device, onSaved: () -> Unit) {
     var name by remember(d.key) { mutableStateOf(vm.name(d)) }
     var room by remember(d.key) { mutableStateOf(vm.store.room(d.key)) }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -754,7 +756,11 @@ private fun NameAndRoom(vm: HomeViewModel, d: Device) {
                 rooms.forEach { r -> SuggestionChip(onClick = { room = r }, label = { Text(r) }) }
             }
         }
-        Button(onClick = { vm.rename(d, name, room) }, modifier = Modifier.fillMaxWidth()) { Text("Zapisz") }
+        Button(onClick = {
+            vm.rename(d, name, room)
+            vm.snack = "Zapisano"
+            onSaved()
+        }, modifier = Modifier.fillMaxWidth()) { Text("Zapisz") }
         Text(
             listOf(d.provider.label, d.model).filter { it.isNotBlank() }.joinToString(" · "),
             style = MaterialTheme.typography.bodySmall,
