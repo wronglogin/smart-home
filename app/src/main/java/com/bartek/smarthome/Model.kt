@@ -18,7 +18,7 @@ import javax.crypto.spec.SecretKeySpec
 const val DEFAULT_ROOM = "Bez pokoju"
 
 enum class Provider(val label: String) {
-    SWITCHBOT("SwitchBot"), GOVEE("Govee"), EWELINK("eWeLink"), TAPO("Tapo"), TV("Android TV")
+    SWITCHBOT("SwitchBot"), GOVEE("Govee"), EWELINK("eWeLink"), TAPO("Tapo"), TV("Android TV"), HOMEASSISTANT("Home Assistant")
 }
 
 enum class Kind { LIGHT, PLUG, CURTAIN, BLIND, BOT, SENSOR, TV, IR, OTHER }
@@ -38,6 +38,7 @@ data class Device(
     val humidity: Double? = null,
     val battery: Int? = null,
     val extra: String? = null,
+    val room: String = "",           // room suggested by the source (Home Assistant area); a room set in the app wins
     val canPower: Boolean = false,
     val canBrightness: Boolean = false,
     val canColor: Boolean = false,

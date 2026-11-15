@@ -22,7 +22,8 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     val eweLink = EweLinkSource(store)
     val tapo = TapoSource(store, app)
     val tv = TvSource(store, app)
-    private val sources: List<DeviceSource> = listOf(switchBot, govee, eweLink, tapo, tv)
+    val homeAssistant = HomeAssistantSource(store)
+    private val sources: List<DeviceSource> = listOf(switchBot, govee, eweLink, tapo, tv, homeAssistant)
 
     var devices by mutableStateOf<List<Device>>(emptyList())
         private set
@@ -97,7 +98,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     // ----- local names, rooms, favourites -----
 
     fun name(d: Device) = store.alias(d.key).ifBlank { d.name }
-    fun room(d: Device) = store.room(d.key).ifBlank { DEFAULT_ROOM }
+    fun room(d: Device) = store.room(d.key).ifBlank { d.room.ifBlank { DEFAULT_ROOM } }
     fun rooms(): List<String> = devices.map { room(it) }.distinct().sortedBy { it.lowercase() }
     fun isFav(d: Device) = store.isFavorite(d.key)
     fun anyFav() = devices.any { isFav(it) }
@@ -227,6 +228,22 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 refresh()
             } catch (e: Exception) {
                 snack = "Błąd wczytywania: ${e.message}"
+            }
+        }
+    }
+
+    // ----- Home Assistant -----
+
+    var haStatus by mutableStateOf<String?>(null)
+        private set
+
+    fun testHomeAssistant() {
+        viewModelScope.launch {
+            haStatus = "Łączę…"
+            haStatus = try {
+                "Połączono: " + homeAssistant.test()
+            } catch (e: Exception) {
+                "Błąd: ${e.message}"
             }
         }
     }

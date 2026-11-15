@@ -125,6 +125,23 @@ fun SettingsScreen(vm: HomeViewModel, openEweLinkLogin: () -> Unit) {
             vm.tv.tvs().forEach { (ip, name) -> ListRow(name, ip) { vm.tv.removeTv(ip); vm.bump() } }
         }
 
+        Section(
+            "Home Assistant", vm.homeAssistant.isConfigured(),
+            "Adres Twojego Home Assistanta (np. http://192.168.1.10:8123 albo adres Nabu Casa) i token: w HA kliknij swój profil → Bezpieczeństwo → Tokeny o długim czasie życia → Utwórz token.",
+        ) {
+            Field(vm, HomeAssistantSource.K_URL, "Adres", secret = false)
+            Field(vm, HomeAssistantSource.K_TOKEN, "Token")
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                FilledTonalButton(onClick = { vm.testHomeAssistant() }, enabled = vm.homeAssistant.isConfigured()) { Text("Sprawdź połączenie") }
+                vm.haStatus?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f)) }
+            }
+            Text(
+                "Pokoje z HA (obszary) przypiszą się same. Jeśli te same urządzenia masz też podłączone bezpośrednio, ukryj duplikaty.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
         BackupSection(vm)
 
         Text(

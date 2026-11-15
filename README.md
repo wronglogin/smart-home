@@ -8,6 +8,7 @@ Aplikacja na Androida w stylu Google Home, która łączy w jednym miejscu urzą
 | **Govee** | chmura (klucz API) | światła i taśmy LED (kolor, jasność), gniazdka, termometry |
 | **eWeLink / Sonoff** | chmura (własna aplikacja na dev.ewelink.cc + logowanie) | przełączniki (też wielokanałowe), ściemniacze, czujniki |
 | **Tapo** | lokalnie w domowym Wi-Fi (konto TP-Link) | gniazdka, żarówki (kolor, jasność) |
+| **Home Assistant** | adres + token (lokalnie lub Nabu Casa) | światła, przełączniki, rolety, klimatyzacja, media, czujniki temp./wilg./ruchu/drzwi, sceny, skrypty, automatyzacje HA; obszary jako pokoje |
 | **Android TV / Google TV** | lokalnie, parowanie kodem z ekranu | włącz/wyłącz, głośność, strzałki, Home/Wstecz, otwieranie aplikacji |
 
 ## Instalacja
