@@ -174,6 +174,7 @@ private fun AutomationCard(vm: HomeViewModel, a: Automation, onEdit: () -> Unit)
 @SuppressLint("BatteryLife", "MissingPermission")
 @Composable
 private fun BackgroundSettings(vm: HomeViewModel) {
+    vm.version // switches and chips below read the store, so redraw when settings change
     val ctx = LocalContext.current
     var open by remember { mutableStateOf(false) }
     val store = vm.store
@@ -207,7 +208,7 @@ private fun BackgroundSettings(vm: HomeViewModel) {
 
     InfoCard {
         Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { open = !open },
+            Modifier.fillMaxWidth().clickable { open = !open },
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
