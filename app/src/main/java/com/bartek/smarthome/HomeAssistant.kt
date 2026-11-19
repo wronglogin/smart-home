@@ -168,10 +168,16 @@ class HomeAssistantSource(private val store: Store) : DeviceSource {
         post("/api/services/$domain/$service", data)
     }
 
-    /** Sends a spoken sentence to HA's Polish Assist and returns its answer. */
-    suspend fun converse(text: String): String {
+    /** Sends a spoken sentence to HA's Polish Assist; returns its answer and the names of the devices it switched. */
+    suspend fun converse(text: String): Pair<String, List<String>> {
         val o = JSONObject(post("/api/conversation/process", JSONObject().put("text", text).put("language", "pl")))
-        return o.optJSONObject("response")?.optJSONObject("speech")?.optJSONObject("plain")?.optString("speech").orEmpty().ifBlank { "Gotowe" }
+        val resp = o.optJSONObject("response") ?: JSONObject()
+        val answer = resp.optJSONObject("speech")?.optJSONObject("plain")?.optString("speech").orEmpty().ifBlank { "Gotowe" }
+        val ok = resp.optJSONObject("data")?.optJSONArray("success") ?: JSONArray()
+        val names = (0 until ok.length()).mapNotNull { ok.optJSONObject(it) }
+            .filter { it.optString("type") == "entity" }
+            .map { it.optString("name") }.filter { it.isNotBlank() }
+        return answer to names
     }
 
     /** Quick check for the settings screen: checks both addresses separately and says which work. */

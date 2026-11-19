@@ -89,7 +89,6 @@ object VoiceParser {
         val rooms = devices.map(roomOf).distinct().filter { it != DEFAULT_ROOM }
         val room = rooms.filter { r -> stems(r).let { s -> s.isNotEmpty() && s.all { it in ts } } }.maxByOrNull { it.length }
         val inRoom: (Device) -> Boolean = { room == null || roomOf(it) == room }
-        val where = room?.let { " ($it)" } ?: ""
 
         // Questions about temperature / humidity
         if (askTemp || askHum) {
@@ -151,6 +150,29 @@ object VoiceParser {
         }
         if (actions.isEmpty()) return VoiceResult("Tego nie da się zrobić z: ${names(targets, nameOf)}")
 
+        // Whole room / whole house: "Włączam światło w salonie" instead of listing every lamp.
+        if (best.isEmpty()) {
+            val allMode = allWord && room == null
+            val place = if (room != null && !allMode) " " + roomPhrase(text, room) else ""
+            val noun = when {
+                coverWord -> if (allMode) "wszystkie rolety" else "rolety"
+                else -> if (allMode) "wszystkie światła" else "światło"
+            }
+            val reply = when (cmd) {
+                is Command.Power ->
+                    if (coverWord) (if (cmd.on) "Otwieram" else "Zamykam") + " $noun$place"
+                    else (if (cmd.on) "Włączam" else "Wyłączam") + " $noun$place"
+                is Command.Brightness -> "Ustawiam jasność ${cmd.value}%" + (if (allMode) " wszystkich świateł" else place)
+                is Command.Position -> when (cmd.openPercent) {
+                    100 -> "Otwieram $noun$place"
+                    0 -> "Zamykam $noun$place"
+                    else -> "Ustawiam $noun$place na ${cmd.openPercent}%"
+                }
+                else -> "Gotowe"
+            }
+            return VoiceResult(reply, actions = actions)
+        }
+
         val list = names(actions.map { it.first }, nameOf)
         val reply = when (cmd) {
             is Command.Power -> (if (cmd.on) "Włączam" else "Wyłączam") + ": $list"
@@ -162,6 +184,13 @@ object VoiceParser {
             }
             else -> "Gotowe"
         }
-        return VoiceResult(if (actions.size > 3 && room != null) reply + where else reply, actions = actions)
+        return VoiceResult(reply, actions = actions)
+    }
+
+    /** The room as the user said it ("w sypialni"), so the answer sounds natural; falls back to the room's name. */
+    private fun roomPhrase(text: String, room: String): String {
+        val want = stems(room).toSet()
+        val words = text.lowercase(PL).split(Regex("[^\\p{L}0-9]+")).filter { w -> w.isNotBlank() && stems(w).firstOrNull() in want }
+        return "w " + if (words.isNotEmpty()) words.joinToString(" ") else room
     }
 }

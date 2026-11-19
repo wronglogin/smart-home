@@ -190,7 +190,13 @@ fun statusText(d: Device): String {
             parts.add(if (it <= 0) "Zamknięte" else if (it >= 100) "Otwarte" else "Otwarte w $it%")
         }
         Kind.BOT -> parts.add("Naciśnij")
-        Kind.IR -> parts.add("Pilot IR")
+        Kind.IR -> parts.add(
+            when (d.on) {
+                true -> "Włączono"
+                false -> "Wyłączono"
+                null -> "Pilot IR"
+            },
+        )
         Kind.TV -> parts.add(
             when (d.on) {
                 true -> "Włączony"
@@ -486,7 +492,7 @@ fun DeviceTile(vm: HomeViewModel, d: Device, onOpen: () -> Unit) {
                     when {
                         !d.online -> onOpen()
                         d.kind == Kind.BOT -> vm.send(d, Command.Press)
-                        d.canPower && d.kind != Kind.IR && d.kind != Kind.TV -> vm.send(d, Command.Power(d.on != true))
+                        d.canPower && d.kind != Kind.TV && (d.kind != Kind.IR || vm.isLight(d)) -> vm.send(d, Command.Power(d.on != true))
                         else -> onOpen()
                     }
                 },

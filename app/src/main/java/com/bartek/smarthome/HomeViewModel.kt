@@ -60,7 +60,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                         list += devices.filter { it.provider == p }
                     }
             }
-            devices = list.distinctBy { it.key }
+            devices = list.distinctBy { it.key }.map { withAssumed(it) }
             errors = errs
             loading = false
         }
@@ -79,6 +79,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 sources.first { it.provider == d.provider }.send(d, cmd)
             } catch (e: Exception) {
                 snack = "${d.provider.label}: ${e.message}"
+                if (isAssumed(d)) store.set("assumed:${d.key}", when (d.on) { true -> "1"; false -> "0"; null -> "" })
                 devices = devices.map { if (it.key == d.key) d else it }
             }
         }
@@ -89,8 +90,21 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         lights.filter { it.on != on }.forEach { send(it, Command.Power(on)) }
     }
 
+    /**
+     * IR devices (e.g. a lamp on the SwitchBot Hub remote) can't report whether they're on,
+     * so the app remembers the last command it sent and shows that.
+     */
+    private fun isAssumed(d: Device) = d.kind == Kind.IR || (d.meta["ir"] == "1" && d.on == null)
+
+    private fun withAssumed(d: Device): Device =
+        if (isAssumed(d) && d.on == null) store.get("assumed:${d.key}").takeIf { it.isNotEmpty() }?.let { d.copy(on = it == "1") } ?: d else d
+
+    private fun remember(d: Device, on: Boolean) {
+        if (isAssumed(d)) store.set("assumed:${d.key}", if (on) "1" else "0")
+    }
+
     private fun optimistic(d: Device, cmd: Command): Device = when (cmd) {
-        is Command.Power -> if (d.kind == Kind.IR) d else d.copy(on = cmd.on)
+        is Command.Power -> { remember(d, cmd.on); d.copy(on = cmd.on) }
         is Command.Brightness -> d.copy(brightness = cmd.value, on = if (d.canPower) true else d.on)
         is Command.Color -> d.copy(color = cmd.rgb, on = if (d.canPower) true else d.on)
         is Command.Position -> d.copy(position = cmd.openPercent)
@@ -203,7 +217,13 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             voiceBusy = true
             val useHa = homeAssistant.isConfigured() && store.get(K_VOICE_HA) != "0"
             val reply = try {
-                if (useHa) homeAssistant.converse(text) else localVoice(text)
+                if (useHa) {
+                    val (answer, targets) = homeAssistant.converse(text)
+                    rememberHaTargets(text, targets)
+                    answer
+                } else {
+                    localVoice(text)
+                }
             } catch (e: Exception) {
                 // HA not reachable (e.g. away from home): understand the command in the app instead
                 try { localVoice(text) } catch (e2: Exception) { "Błąd: ${e2.message}" }
@@ -214,6 +234,22 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             kotlinx.coroutines.delay(1500)
             refresh()
         }
+    }
+
+    /** HA's Assist switched these by name; IR lamps the app shows can't report it, so remember it here. */
+    private fun rememberHaTargets(text: String, names: List<String>) {
+        val t = VoiceParser.norm(text)
+        val on = when {
+            t.contains("wylacz") || t.contains("zgas") -> false
+            t.contains("wlacz") || t.contains("zapal") -> true
+            else -> return
+        }
+        val wanted = names.map { VoiceParser.norm(it) }.toSet()
+        val hit = devices.filter { isAssumed(it) && (VoiceParser.norm(name(it)) in wanted || VoiceParser.norm(it.name) in wanted) }
+        if (hit.isEmpty()) return
+        hit.forEach { remember(it, on) }
+        val keys = hit.map { it.key }.toSet()
+        devices = devices.map { if (it.key in keys) it.copy(on = on) else it }
     }
 
     private fun localVoice(text: String): String {
