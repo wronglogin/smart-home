@@ -1,9 +1,16 @@
 package com.bartek.smarthome
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
+import android.view.ViewGroup
+import android.webkit.CookieManager
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -22,6 +29,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -127,16 +135,17 @@ fun SettingsScreen(vm: HomeViewModel, openEweLinkLogin: () -> Unit) {
 
         Section(
             "Home Assistant", vm.homeAssistant.isConfigured(),
-            "Adres Twojego Home Assistanta (np. http://192.168.1.10:8123 albo adres Nabu Casa) i token: w HA kliknij swój profil → Bezpieczeństwo → Tokeny o długim czasie życia → Utwórz token.",
+            "Adres w domu (np. http://192.168.1.10:8123), adres zdalny do łączenia się poza domowym Wi-Fi (np. https://ha.rozanahome.pl) i token: w HA kliknij swój profil → Bezpieczeństwo → Tokeny o długim czasie życia → Utwórz token. Aplikacja sama wybiera adres, który w danej chwili działa.",
         ) {
-            Field(vm, HomeAssistantSource.K_URL, "Adres", secret = false)
+            Field(vm, HomeAssistantSource.K_URL, "Adres w domu", secret = false)
+            Field(vm, HomeAssistantSource.K_URL_EXT, "Adres zdalny (poza domem)", secret = false)
             Field(vm, HomeAssistantSource.K_TOKEN, "Token")
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 FilledTonalButton(onClick = { vm.testHomeAssistant() }, enabled = vm.homeAssistant.isConfigured()) { Text("Sprawdź połączenie") }
                 vm.haStatus?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f)) }
             }
             Text(
-                "Pokoje z HA (obszary) przypiszą się same. Jeśli te same urządzenia masz też podłączone bezpośrednio, ukryj duplikaty.",
+                "Pokoje z HA (obszary) przypiszą się same. Importowane są światła, gniazdka i przełączniki, rolety, klimatyzacja i multimedia – czujniki, sceny i automatyzacje zostają w HA. Jeśli te same urządzenia masz też podłączone bezpośrednio, ukryj duplikaty.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -144,9 +153,9 @@ fun SettingsScreen(vm: HomeViewModel, openEweLinkLogin: () -> Unit) {
 
         Section(
             "Sterowanie głosowe", false,
-            "Przycisk 🎤 na stronie głównej albo skrót „Komenda głosowa” (przytrzymaj ikonę aplikacji). Przykłady: „włącz światło w kuchni”, „wyłącz wszystkie światła”, „ustaw jasność lampy na 30 procent”, „otwórz rolety w salonie”, „jaka jest temperatura w sypialni”, „uruchom dobranoc”.",
+            "Przycisk 🎤 na stronie głównej albo skrót „Komenda głosowa” (przytrzymaj ikonę aplikacji). Przykłady: „włącz światło w kuchni”, „wyłącz wszystkie światła”, „ustaw jasność lampy na 30 procent”, „otwórz rolety w salonie”, „jaka jest temperatura w sypialni”.",
         ) {
-            ToggleRow(vm, K_VOICE_HA, "Wysyłaj komendy do Home Assistanta", "Gdy HA jest połączony, rozumie komendy jego polski Asystent. Poza domem aplikacja zrozumie je sama.")
+            ToggleRow(vm, K_VOICE_HA, "Wysyłaj komendy do Home Assistanta", "Gdy HA jest połączony, rozumie komendy jego polski Asystent (także poza domem przez adres zdalny). Gdy HA jest nieosiągalny, aplikacja zrozumie je sama.")
             ToggleRow(vm, K_VOICE_SPEAK, "Czytaj odpowiedź na głos", "Polski głos telefonu.")
         }
 
@@ -173,10 +182,12 @@ private fun BackupSection(vm: HomeViewModel) {
     }
     Section(
         "Kopia ustawień", false,
-        "Ustawienia zapisują się od razu i zostają po aktualizacji aplikacji. Plik kopii przyda się, gdy odinstalujesz aplikację albo zmienisz telefon – zawiera klucze i hasła, więc trzymaj go u siebie.",
+        "Ustawienia zapisują się od razu i zostają po aktualizacji aplikacji. Plik kopii przyda się, gdy odinstalujesz aplikację albo zmienisz telefon. Zawiera wszystko: konta, pokoje, nazwy, ulubione, ukryte urządzenia, ukryte kafelki menu, przeniesione kategorie i sparowane telewizory – także klucze i hasła, więc trzymaj go u siebie.",
     ) {
+        vm.version
+        Text("Teraz w kopii: " + vm.store.backupSummary(), style = MaterialTheme.typography.bodySmall)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilledTonalButton(onClick = { exportLauncher.launch("MojDom-ustawienia.json") }, modifier = Modifier.weight(1f)) {
+            FilledTonalButton(onClick = { exportLauncher.launch("Rozana-kopia.json") }, modifier = Modifier.weight(1f)) {
                 Text("Zapisz do pliku")
             }
             OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }, modifier = Modifier.weight(1f)) {
@@ -298,31 +309,81 @@ private fun ListRow(title: String, subtitle: String, onDelete: () -> Unit) {
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun EweLinkLoginScreen(vm: HomeViewModel, onDone: () -> Unit) {
+    val ctx = LocalContext.current
     val url = remember { vm.eweLink.loginUrl() }
     val redirect = remember { vm.eweLink.redirectUrl() }
+    var progress by remember { mutableIntStateOf(0) }
+    var pageError by remember { mutableStateOf<String?>(null) }
+    var pasted by remember { mutableStateOf("") }
+    var handled by remember { mutableStateOf(false) }
+
+    /** Takes the address eWeLink sent us to after logging in and finishes the login. */
+    fun finish(u: String): Boolean {
+        val uri = Uri.parse(u.trim())
+        val code = uri.getQueryParameter("code") ?: return false
+        if (!handled) {
+            handled = true
+            vm.eweLinkCallback(code, uri.getQueryParameter("region") ?: "eu")
+            onDone()
+        }
+        return true
+    }
+
     Column(Modifier.fillMaxSize()) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(8.dp)) {
             IconButton(onClick = onDone) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Wstecz") }
-            Text("Logowanie eWeLink", style = MaterialTheme.typography.titleLarge)
+            Text("Logowanie eWeLink", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            TextButton(onClick = {
+                runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                    .onFailure { vm.snack = "Brak przeglądarki" }
+            }) { Text("W przeglądarce") }
         }
+        if (progress in 1..99) LinearProgressIndicator(progress = { progress / 100f }, modifier = Modifier.fillMaxWidth())
+
+        // Fallback when the page stays white: log in in the browser, then paste the address it ends on.
+        Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    pageError ?: "Biała strona? Kliknij „W przeglądarce”, zaloguj się, a potem skopiuj adres strony, na którą Cię przeniesie (zaczyna się od ${redirect.substringAfter("://").substringBefore('/')}…), i wklej go tutaj.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (pageError != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = pasted, onValueChange = { pasted = it },
+                        label = { Text("Adres po zalogowaniu") }, singleLine = true, modifier = Modifier.weight(1f),
+                    )
+                    FilledTonalButton(onClick = {
+                        if (!finish(pasted)) vm.snack = "W tym adresie nie ma kodu logowania (code=…)"
+                    }, enabled = pasted.isNotBlank()) { Text("Połącz") }
+                }
+            }
+        }
+
         AndroidView(
-            modifier = Modifier.fillMaxSize(),
-            factory = { ctx ->
-                WebView(ctx).apply {
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            factory = { c ->
+                WebView(c).apply {
+                    layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                    setBackgroundColor(android.graphics.Color.WHITE)
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
-                    var handled = false
-                    fun check(u: String?): Boolean {
-                        if (u == null || !u.startsWith(redirect)) return false
-                        if (!handled) {
-                            handled = true
-                            val uri = Uri.parse(u)
-                            val code = uri.getQueryParameter("code")
-                            val region = uri.getQueryParameter("region") ?: "eu"
-                            if (code != null) vm.eweLinkCallback(code, region) else vm.snack = "eWeLink: brak kodu logowania"
-                            onDone()
-                        }
-                        return true
+                    settings.databaseEnabled = true
+                    settings.loadWithOverviewMode = true
+                    settings.useWideViewPort = true
+                    settings.javaScriptCanOpenWindowsAutomatically = true
+                    settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                    // Some login pages refuse to render inside an app's WebView ("; wv" in the user agent).
+                    settings.userAgentString = settings.userAgentString.replace("; wv", "")
+                    CookieManager.getInstance().setAcceptCookie(true)
+                    CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+                    fun check(u: String?): Boolean = u != null && u.startsWith(redirect) && (finish(u) || run {
+                        vm.snack = "eWeLink: brak kodu logowania"
+                        onDone()
+                        true
+                    })
+                    webChromeClient = object : WebChromeClient() {
+                        override fun onProgressChanged(view: WebView, p: Int) { progress = p }
                     }
                     webViewClient = object : WebViewClient() {
                         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
@@ -330,6 +391,16 @@ fun EweLinkLoginScreen(vm: HomeViewModel, onDone: () -> Unit) {
 
                         override fun onPageStarted(view: WebView, u: String?, favicon: Bitmap?) {
                             if (check(u)) view.stopLoading()
+                        }
+
+                        override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+                            if (request.isForMainFrame) pageError = "Strona logowania się nie wczytała (${error.description}). Spróbuj „W przeglądarce”."
+                        }
+
+                        override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
+                            if (request.isForMainFrame && !request.url.toString().startsWith(redirect)) {
+                                pageError = "eWeLink odpowiedział błędem ${response.statusCode}. Sprawdź APPID, APP SECRET i Redirect URL albo spróbuj „W przeglądarce”."
+                            }
                         }
                     }
                     loadUrl(url)

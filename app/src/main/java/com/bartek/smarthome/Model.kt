@@ -64,7 +64,7 @@ interface DeviceSource {
     suspend fun devices(): List<Device>
     suspend fun send(device: Device, cmd: Command)
 
-    /** Fresh state of just these devices (used by automations, so background checks stay cheap). */
+    /** Fresh state of just these devices (cheaper than reloading everything). */
     suspend fun refresh(list: List<Device>): List<Device> {
         val keys = list.map { it.key }.toSet()
         return devices().filter { it.key in keys }
@@ -109,10 +109,38 @@ class Store(context: Context) {
     fun hiddenFilters(): Set<String> = get("hiddenFilters").split(',').filter { it.isNotBlank() }.toSet()
     fun setHiddenFilters(s: Set<String>) = set("hiddenFilters", s.joinToString(","))
 
-    /** All settings (accounts, rooms, names, favourites, paired TVs) as one JSON file. */
+    /** Removes what the old built-in automations left behind (they now live in Home Assistant). */
+    fun dropAutomationLeftovers() {
+        val old = p.all.keys.filter { isAutomationKey(it) }
+        if (old.isNotEmpty()) remove(*old.toTypedArray())
+    }
+
+    private fun isAutomationKey(k: String) =
+        k == "automations" || k.startsWith("auto_") || k.startsWith("monitor_") || k == "home_lat" || k == "home_lon"
+
+    /** What a backup holds, in words, e.g. for the settings screen. */
+    fun backupSummary(): String {
+        val all = p.all
+        fun count(prefix: String) = all.count { (k, v) -> k.startsWith(prefix) && (v == true || (v is String && v.isNotBlank())) }
+        val accounts = listOf(
+            "SwitchBot" to SwitchBotSource.K_TOKEN, "Govee" to GoveeSource.K_KEY, "eWeLink" to EweLinkSource.K_AT,
+            "Tapo" to TapoSource.K_USER, "Home Assistant" to HomeAssistantSource.K_TOKEN,
+        ).filter { get(it.second).isNotBlank() }.map { it.first } + (if (array("tv_list").length() > 0) listOf("Android TV") else emptyList())
+        val parts = mutableListOf<String>()
+        parts += if (accounts.isEmpty()) "brak kont" else "konta: " + accounts.joinToString(", ")
+        parts += "pokoje i nazwy: ${count("room:") + count("alias:")}"
+        parts += "ulubione: ${count("fav:")}"
+        parts += "ukryte urządzenia: ${count("hidden:")}"
+        parts += "przeniesione do innej kategorii: ${count("cat:")}"
+        parts += "ukryte kafelki menu: ${hiddenFilters().size}"
+        return parts.joinToString(" · ")
+    }
+
+    /** All settings (accounts, rooms, names, favourites, hidden devices, menu tiles, categories, paired TVs) as one JSON file. */
     fun exportJson(): String {
         val data = JSONObject()
         for ((k, v) in p.all) {
+            if (isAutomationKey(k)) continue
             val entry = when (v) {
                 is Boolean -> JSONObject().put("t", "b").put("v", v)
                 is Long -> JSONObject().put("t", "l").put("v", v)
@@ -123,12 +151,12 @@ class Store(context: Context) {
             }
             if (entry != null) data.put(k, entry)
         }
-        return JSONObject().put("app", "MojDom").put("format", 1).put("data", data).toString(2)
+        return JSONObject().put("app", "Rozana").put("format", 1).put("data", data).toString(2)
     }
 
     fun importJson(text: String) {
         val root = JSONObject(text)
-        if (root.optString("app") != "MojDom") throw IllegalArgumentException("To nie jest plik ustawień Mój Dom")
+        if (root.optString("app") !in setOf("Rozana", "MojDom")) throw IllegalArgumentException("To nie jest plik kopii aplikacji Różana")
         val data = root.getJSONObject("data")
         val e = p.edit().clear()
         for (k in data.keys()) {
@@ -167,8 +195,8 @@ object Net {
 
     fun sha1(b: ByteArray): ByteArray = MessageDigest.getInstance("SHA-1").digest(b)
 
-    suspend fun call(request: Request): String = withContext(Dispatchers.IO) {
-        client.newCall(request).execute().use { r ->
+    suspend fun call(request: Request, http: OkHttpClient = client): String = withContext(Dispatchers.IO) {
+        http.newCall(request).execute().use { r ->
             val body = r.body?.string() ?: ""
             if (!r.isSuccessful) throw IOException("HTTP ${r.code}: ${body.take(200)}")
             body

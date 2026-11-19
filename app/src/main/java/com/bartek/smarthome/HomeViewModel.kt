@@ -62,7 +62,6 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             }
             devices = list.distinctBy { it.key }
             errors = errs
-            Engine.onDevices(getApplication(), devices)
             loading = false
         }
     }
@@ -144,54 +143,10 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         bump()
     }
 
-    // ----- automations -----
-
-    var automations by mutableStateOf(AutomationStore.load(store))
-        private set
-
     init {
         Speaker.init(app)
-        AutomationScheduler.scheduleAll(app)
-        if (Monitor.enabled(store)) AutomationService.sync(app)
+        store.dropAutomationLeftovers()
     }
-
-    /** Re-reads alarms and background watching after any automation change. */
-    fun automationSettingsChanged() {
-        AutomationScheduler.scheduleAll(getApplication())
-        AutomationService.sync(getApplication())
-        bump()
-    }
-
-    fun saveAutomation(a: Automation) {
-        automations = AutomationStore.upsert(store, a)
-        automationSettingsChanged()
-        snack = "Zapisano automatyzację „${a.name}”"
-    }
-
-    fun setAutomationEnabled(a: Automation, enabled: Boolean) {
-        automations = AutomationStore.upsert(store, a.copy(enabled = enabled))
-        automationSettingsChanged()
-    }
-
-    fun deleteAutomation(id: String) {
-        automations = AutomationStore.remove(store, id)
-        AutomationScheduler.cancel(getApplication(), id)
-        automationSettingsChanged()
-    }
-
-    /** Manual run (▶): skips conditions and runs in the background service, so delays keep going after closing the app. */
-    fun runAutomation(a: Automation) {
-        AutomationService.run(getApplication(), a.id, force = true)
-        snack = "Uruchomiono „${a.name}”"
-        viewModelScope.launch {
-            kotlinx.coroutines.delay(4000)
-            automations = AutomationStore.load(store)
-            bump()
-            refresh()
-        }
-    }
-
-    fun lastRun(a: Automation): String? = formatLastRun(store.get("auto_last:${a.id}"))
 
     // ----- saving and backup -----
 
@@ -226,9 +181,9 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                     store.importJson(inp.use { String(it.readBytes()) })
                 }
                 tapo.resetSessions()
-                automations = AutomationStore.load(store)
-                automationSettingsChanged()
-                snack = "Przywrócono ustawienia"
+                store.dropAutomationLeftovers()
+                bump()
+                snack = "Przywrócono ustawienia: " + store.backupSummary()
                 refresh()
             } catch (e: Exception) {
                 snack = "Błąd wczytywania: ${e.message}"
@@ -263,11 +218,10 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun localVoice(text: String): String {
         val r = VoiceParser.parse(
-            text, devices, automations,
-            nameOf = { name(it) }, roomOf = { room(it) }, isLight = { isLightDevice(store, it) },
+            text, devices,
+            nameOf = { name(it) }, roomOf = { room(it) }, isLight = { isLight(it) },
         )
         r.actions.forEach { (d, c) -> send(d, c) }
-        r.automation?.let { AutomationService.run(getApplication(), it.id, force = true) }
         return r.reply
     }
 
@@ -280,7 +234,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             haStatus = "Łączę…"
             haStatus = try {
-                "Połączono: " + homeAssistant.test()
+                homeAssistant.test()
             } catch (e: Exception) {
                 "Błąd: ${e.message}"
             }

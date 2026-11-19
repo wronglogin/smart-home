@@ -285,23 +285,6 @@ fun HomeScreen(vm: HomeViewModel, openSettings: () -> Unit) {
         }
         if (editChips) ChipsDialog(vm) { editChips = false }
 
-        // Automations as one-tap shortcuts, like routines in Google Home.
-        if (vm.automations.isNotEmpty()) {
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(vm.automations, key = { it.id }) { a ->
-                    AssistChip(
-                        onClick = { vm.runAutomation(a) },
-                        label = { Text(a.name.ifBlank { "Automatyzacja" }) },
-                        leadingIcon = { Icon(Icons.Filled.PlayArrow, null, Modifier.size(18.dp)) },
-                        shape = RoundedCornerShape(24.dp),
-                    )
-                }
-            }
-        }
-
         vm.errors.forEach { (p, msg) ->
             Text(
                 "${p.label}: $msg",

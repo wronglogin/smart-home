@@ -37,12 +37,11 @@ object Speaker {
 data class VoiceResult(
     val reply: String,
     val actions: List<Pair<Device, Command>> = emptyList(),
-    val automation: Automation? = null,
 )
 
 /**
  * Simple Polish command understanding, used when Home Assistant is not connected.
- * Matches device, room and automation names by word stems, so "kuchni" finds "Kuchnia" and "lampę" finds "Lampa".
+ * Matches device and room names by word stems, so "kuchni" finds "Kuchnia" and "lampę" finds "Lampa".
  */
 object VoiceParser {
     private val PL = Locale.forLanguageTag("pl")
@@ -65,7 +64,6 @@ object VoiceParser {
     fun parse(
         text: String,
         devices: List<Device>,
-        automations: List<Automation>,
         nameOf: (Device) -> String,
         roomOf: (Device) -> String,
         isLight: (Device) -> Boolean,
@@ -109,12 +107,6 @@ object VoiceParser {
         val best = named.filter { d ->
             val ds = stems(nameOf(d))
             named.none { o -> o.key != d.key && stems(nameOf(o)).let { os -> os.size > ds.size && ds.all { it in os } } }
-        }
-
-        // Automations: "uruchom dobranoc", "włącz scenę film"
-        if (best.isEmpty() && (on || has("scen"))) {
-            val auto = automations.filter { a -> stems(a.name).let { s -> s.isNotEmpty() && s.all { it in ts } } }.maxByOrNull { it.name.length }
-            if (auto != null) return VoiceResult("Uruchamiam ${auto.name}", automation = auto)
         }
 
         val targets: List<Device> = when {

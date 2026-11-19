@@ -13,31 +13,65 @@ import kotlin.math.roundToInt
 
 /**
  * Home Assistant over its REST API (address + long-lived access token).
- * Brings in lights, switches, covers, climate, media players, temperature/humidity/motion/door sensors,
- * and scenes, scripts, buttons and HA automations as one-tap tiles. Areas from HA become suggested rooms.
+ * Brings in lights, switches, covers, climate and media players. Areas from HA become suggested rooms.
+ *
+ * Two addresses: the home one (fast, works without internet) and a remote one (e.g. https://ha.rozanahome.pl)
+ * for when the phone is away from the home Wi-Fi. The home address is tried first; when it can't be reached
+ * the remote one is used, and for the next few minutes it goes first so nothing waits on the home address.
  */
 class HomeAssistantSource(private val store: Store) : DeviceSource {
     override val provider = Provider.HOMEASSISTANT
 
-    override fun isConfigured() = store.get(K_URL).isNotBlank() && store.get(K_TOKEN).isNotBlank()
+    override fun isConfigured() = (local().isNotBlank() || remote().isNotBlank()) && store.get(K_TOKEN).isNotBlank()
 
-    private fun base(): String {
-        var u = store.get(K_URL).trim().trimEnd('/')
-        if (!u.startsWith("http://") && !u.startsWith("https://")) u = "http://$u"
+    private fun normalize(raw: String): String {
+        var u = raw.trim().trimEnd('/')
+        if (u.isBlank()) return ""
+        if (!u.startsWith("http://") && !u.startsWith("https://")) u = (if (u.contains(":8123") || u.first().isDigit()) "http://" else "https://") + u
         return u
     }
 
-    private fun req(path: String) = Request.Builder().url(base() + path)
+    private fun local() = normalize(store.get(K_URL))
+    private fun remote() = normalize(store.get(K_URL_EXT))
+
+    /** Addresses to try, in order. */
+    private fun bases(): List<String> {
+        val l = local()
+        val r = remote()
+        if (l.isBlank() || r.isBlank() || l == r) return listOf(l.ifBlank { r })
+        val homeRecentlyFailed = System.currentTimeMillis() - lastLocalFail < 5 * 60_000
+        return if (homeRecentlyFailed) listOf(r, l) else listOf(l, r)
+    }
+
+    private fun req(base: String, path: String) = Request.Builder().url(base + path)
         .header("Authorization", "Bearer " + store.get(K_TOKEN).trim())
         .header("Content-Type", "application/json")
 
-    private suspend fun get(path: String): String = try {
-        Net.call(req(path).build())
-    } catch (e: IOException) {
-        if (e.message?.startsWith("HTTP 401") == true) throw IOException("Home Assistant: zły token") else throw e
+    /** Runs the request against the home address, then the remote one if the first can't be reached. */
+    private suspend fun call(path: String, body: JSONObject? = null): String {
+        val list = bases()
+        var last: IOException? = null
+        for ((i, base) in list.withIndex()) {
+            val isLocal = base == local() && remote().isNotBlank() && list.size > 1
+            val r = req(base, path).let { if (body != null) it.post(body.toString().toRequestBody(Net.JSON)) else it }.build()
+            try {
+                val out = Net.call(r, if (isLocal) QUICK else Net.client)
+                if (isLocal) lastLocalFail = 0
+                return out
+            } catch (e: IOException) {
+                val msg = e.message ?: ""
+                if (msg.startsWith("HTTP 401")) throw IOException("Home Assistant: zły token")
+                if (msg.startsWith("HTTP ")) throw e // HA answered, so the address is fine
+                if (isLocal) lastLocalFail = System.currentTimeMillis()
+                last = if (i == list.lastIndex && list.size > 1) IOException("Home Assistant nieosiągalny (w domu i zdalnie)") else e
+            }
+        }
+        throw last ?: IOException("Home Assistant: brak adresu")
     }
 
-    private suspend fun post(path: String, body: JSONObject): String = Net.call(req(path).post(body.toString().toRequestBody(Net.JSON)).build())
+    private suspend fun get(path: String): String = call(path)
+
+    private suspend fun post(path: String, body: JSONObject): String = call(path, body)
 
     /** entity_id → area name, in one request through HA's template engine. */
     private suspend fun areas(): Map<String, String> = try {
@@ -106,18 +140,7 @@ class HomeAssistantSource(private val store: Store) : DeviceSource {
                 humidity = a.optDouble("current_humidity").takeIf { !it.isNaN() },
                 extra = state,
             )
-            "sensor" -> when (cls) {
-                "temperature" -> dev(Kind.SENSOR).copy(temperature = state.toDoubleOrNull())
-                "humidity" -> dev(Kind.SENSOR).copy(humidity = state.toDoubleOrNull())
-                else -> null // HA has hundreds of other sensors; skipped to keep the list readable
-            }
-            "binary_sensor" -> when (cls) {
-                "motion", "occupancy", "presence" -> dev(Kind.SENSOR).copy(extra = if (state == "on") "Wykryto ruch" else "Brak ruchu")
-                "door", "window", "opening", "garage_door" -> dev(Kind.SENSOR).copy(extra = if (state == "on") "Otwarte" else "Zamknięte")
-                else -> null
-            }
-            "scene", "script", "button" -> dev(Kind.BOT).copy(room = room.ifBlank { "Sceny Home Assistant" })
-            "automation" -> dev(Kind.PLUG).copy(on = state == "on", canPower = true, room = room.ifBlank { "Automatyzacje Home Assistant" })
+            // Sensors, scenes, scripts, buttons and HA automations are left in Home Assistant.
             else -> null
         }
     }
@@ -140,18 +163,9 @@ class HomeAssistantSource(private val store: Store) : DeviceSource {
                 0 -> "close_cover"
                 else -> { data.put("position", cmd.openPercent); "set_cover_position" }
             }
-            is Command.Press -> when (domain) {
-                "button" -> "press"
-                "automation" -> "trigger"
-                else -> "turn_on" // scene, script
-            }
             else -> return
         }
-        try {
-            post("/api/services/$domain/$service", data)
-        } catch (e: IOException) {
-            if (e.message?.startsWith("HTTP 401") == true) throw IOException("Home Assistant: zły token") else throw e
-        }
+        post("/api/services/$domain/$service", data)
     }
 
     /** Sends a spoken sentence to HA's Polish Assist and returns its answer. */
@@ -160,14 +174,31 @@ class HomeAssistantSource(private val store: Store) : DeviceSource {
         return o.optJSONObject("response")?.optJSONObject("speech")?.optJSONObject("plain")?.optString("speech").orEmpty().ifBlank { "Gotowe" }
     }
 
-    /** Quick check for the settings screen: returns HA's version or throws. */
+    /** Quick check for the settings screen: checks both addresses separately and says which work. */
     suspend fun test(): String {
-        val o = JSONObject(get("/api/config"))
-        return o.optString("location_name").ifBlank { "Home Assistant" } + " " + o.optString("version")
+        if (store.get(K_TOKEN).isBlank()) return "Brak tokenu"
+        val parts = mutableListOf<String>()
+        if (local().isNotBlank()) parts += "W domu: " + one(local())
+        if (remote().isNotBlank()) parts += "Zdalnie: " + one(remote())
+        return parts.joinToString("\n")
+    }
+
+    private suspend fun one(base: String): String = try {
+        val o = JSONObject(Net.call(req(base, "/api/config").build()))
+        "✓ " + o.optString("location_name").ifBlank { "Home Assistant" } + " " + o.optString("version")
+    } catch (e: Exception) {
+        val m = e.message ?: e.toString()
+        "✗ " + if (m.startsWith("HTTP 401")) "zły token" else m.take(80)
     }
 
     companion object {
         const val K_URL = "ha_url"
+        const val K_URL_EXT = "ha_url_ext"
         const val K_TOKEN = "ha_token"
+
+        @Volatile private var lastLocalFail = 0L
+
+        /** Short connect timeout for the home address, so being away from home costs ~2 s once, not 10 s. */
+        private val QUICK = Net.client.newBuilder().connectTimeout(2, java.util.concurrent.TimeUnit.SECONDS).build()
     }
 }

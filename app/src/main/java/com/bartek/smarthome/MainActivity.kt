@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -61,6 +60,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun App(vm: HomeViewModel = viewModel()) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    if (tab > 1) tab = 0
     var eweLogin by remember { mutableStateOf(false) }
     val snackHost = remember { SnackbarHostState() }
 
@@ -74,9 +74,9 @@ fun App(vm: HomeViewModel = viewModel()) {
         }
     }
 
-    // Tabs: 0 = home, 1 = automations, 2 = settings. Leaving settings reloads devices with the new accounts.
+    // Tabs: 0 = home, 1 = settings. Leaving settings reloads devices with the new accounts.
     fun select(t: Int) {
-        if (tab == 2 && t != 2) vm.onSettingsClosed()
+        if (tab == 1 && t != 1) vm.onSettingsClosed()
         tab = t
     }
 
@@ -99,12 +99,6 @@ fun App(vm: HomeViewModel = viewModel()) {
                     NavigationBarItem(
                         selected = tab == 1,
                         onClick = { select(1) },
-                        icon = { Icon(Icons.Outlined.Schedule, null) },
-                        label = { Text("Automatyzacja") },
-                    )
-                    NavigationBarItem(
-                        selected = tab == 2,
-                        onClick = { select(2) },
                         icon = { Icon(Icons.Outlined.Settings, null) },
                         label = { Text("Ustawienia") },
                     )
@@ -115,8 +109,7 @@ fun App(vm: HomeViewModel = viewModel()) {
         Box(Modifier.padding(pad).fillMaxSize()) {
             when {
                 eweLogin -> EweLinkLoginScreen(vm) { eweLogin = false }
-                tab == 0 -> HomeScreen(vm) { select(2) }
-                tab == 1 -> AutomationScreen(vm)
+                tab == 0 -> HomeScreen(vm) { select(1) }
                 else -> SettingsScreen(vm) { eweLogin = true }
             }
         }
